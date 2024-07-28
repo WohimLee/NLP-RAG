@@ -1,0 +1,295 @@
+# coding:utf-8
+import faiss
+from sentence_transformers import SentenceTransformer
+from langchain_text_splitters import CharacterTextSplitter
+from langchain_community.document_loaders import DirectoryLoader
+import pickle
+from zhipuai import ZhipuAI
+import os
+import pandas as pd
+import time
+import gradio as gr
+import random
+
+def get_ans(prompt):
+    client = ZhipuAI(api_key="0f56bcd3ce36d22b5b6564de4faeebfe.nvc4AlZb8rw1WhFG")
+
+    response = client.chat.completions.create(
+        model="glm-4",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        top_p=0.3,
+        temperature=0.45,
+        max_tokens=1024,
+        stream=True,
+    )
+    # ans = ""
+    # for trunk in response:
+    #     ans += trunk.choices[0].delta.content
+    # return ans
+    return response
+
+class MyDocument():
+    def __init__(self,dir,name):
+        loader = DirectoryLoader(dir)
+        documents = loader.load()
+
+        if os.path.exists(os.path.join(".cache",f"{name}_contents.pkl")) == False:
+            text_spliter = CharacterTextSplitter(chunk_size=300, chunk_overlap=50)  # 400   0:0-200  1:150-350 2:300-400
+
+            split_docs = text_spliter.split_documents(documents)
+            contents = [i.page_content for i in split_docs]
+            with open(os.path.join(".cache",f"{name}_contents.pkl"), "wb") as f:
+                pickle.dump(contents, f)
+        else:
+            with open(os.path.join(".cache",f"{name}_contents.pkl"), "rb") as f:
+                contents = pickle.load(f)
+        self.contents = contents
+
+class MyEmbModel():
+    def __init__(self,model_dir):
+        self.model = SentenceTransformer(model_dir)
+
+
+    def to_emb(self,sentence):
+        if isinstance(sentence,str):
+            sentence = [sentence]
+        return self.model.encode(sentence)
+
+class MyEmbDatabase():
+    def __init__(self,emb_dir,contents,name):
+        self.emb_model = MyEmbModel(emb_dir)
+
+        if os.path.exists(os.path.join(".cache",f"{name}_faiss_index.pkl")) == False:
+            index = faiss.IndexFlatL2(self.emb_model.model.get_sentence_embedding_dimension())
+            embs = self.emb_model.to_emb(contents)
+            index.add(embs)
+
+            with open(os.path.join(".cache",f"{name}_faiss_index.pkl"),"wb") as f:
+                pickle.dump(index,f)
+        else:
+            with open(os.path.join(".cache",f"{name}_faiss_index.pkl"),"rb") as f:
+                index = pickle.load(f)
+        self.index = index
+        self.contents = contents
+
+
+    def add(self,emb):
+        self.index.add(emb)
+
+    def search(self,content,topn=3):
+        if isinstance(content,str):
+            content = self.emb_model.to_emb(content)
+
+        distances , idxs = self.index.search(content,topn) # mlivus
+
+        results = [self.contents[i] for i in idxs[0]]
+        return results
+
+# 报告生成的处理函数
+def greet1(emb_database,prompt_data):
+    # # ----------------------------- 报告生成过程 -----------------------------
+    # report = ""
+    # for p_n, group in prompt_data:
+    #     print(f"第{p_n}段内容生成中......")
+    #     p_n_content = []
+    #     for question in group["prompt"]:
+    #         search_result = emb_database.search(question, 3)
+    #
+    #         search_result = "\n".join(search_result)
+    #
+    #         prompt = f"请根据已知内容简洁明了的回复用户的问题，已知内容如下：```{search_result}```,用户的问题是：{question}，如何已知内容无法回答用户的问题，请直接回复：不知道，无需输出其他内容"
+    #         ans = get_ans(prompt)
+    #         ans = ans.replace("\n", "")
+    #         p_n_content.append(ans)
+    #
+    #     prompt_report = f"你是一个大学教授，你需要根据相关内容，来撰写一段内容，生成的结果必须严格来自相关内容，语言必须严谨、符合事实，不能使用第一人称，相关内容如下：\n```\n{''.join(p_n_content)}\n```\n生成的结果为："
+    #     temp_report = get_ans(prompt_report)
+    #     temp_report = temp_report.replace("\n", "")
+    #
+    #     report += "    " + temp_report
+    #     report += "\n"
+    #     print(report)
+    #     print("*" * 30)
+    #
+    # time_t = int(time.time())
+    # with open(f"{time_t}_report.txt", "w", encoding="utf-8") as f:
+    #     f.write(report)
+
+# 问答处理函数
+    # yield
+    content1 = """202"""
+    content2 = """华为云"""
+
+    c1 = ""
+    c2 = ""
+    for i,j in zip(content1,content2):
+        c1 += i
+        c2 += j
+
+        if random.random()>0.5:
+            time.sleep(0.3)
+        yield c1, c2
+
+    time.sleep(3)
+    yield "abc","123"
+
+    # yield "hhh1","hhh2"
+    # time.sleep(3)
+    # yield "hhh111","hhh222"
+def greet2(name):
+    return "Hello "
+
+def function1(input1,input2): #   知识库1-大模型
+    global database,database1,database2
+    if "知识库1" in input1:
+        database = database1
+    elif "知识库2" in input1:
+        database = database2
+    else:
+        database = database1
+
+
+    result1 = []
+    result2 = []
+
+    result1.append("内容解析中......")
+    yield "\n".join(result1),"\n".join(result2)
+
+    all_report = ""
+    for p_n, group in database.prompt_data.groupby("段落"):
+        result1.append(f"第{p_n}段内容生成中......")
+
+        yield "\n".join(result1), "\n".join(result2)
+
+        p_n_content = []
+        for question in group["prompt"]:
+            search_result = database.search(question, 3)
+
+            search_result = "\n".join(search_result)
+
+            prompt = f"请根据已知内容简洁明了的回复用户的问题，已知内容如下：```{search_result}```,用户的问题是：{question}，如何已知内容无法回答用户的问题，请直接回复：不知道，无需输出其他内容"
+            # ans = get_ans(prompt)
+
+            # client = ZhipuAI(api_key="0f56bcd3ce36d22b5b6564de4faeebfe.nvc4AlZb8rw1WhFG")
+            # response = client.chat.completions.create(
+            #     model="glm-4",
+            #     messages=[
+            #         {
+            #             "role": "user",
+            #             "content": prompt
+            #         }
+            #     ],
+            #     top_p=0.3,
+            #     temperature=0.45,
+            #     max_tokens=1024,
+            #     stream=True,
+            # )
+            response = get_ans(prompt)
+            result1.append("检索及回答内容:\n")
+            for trunk in response:
+                result1[-1] += trunk.choices[0].delta.content
+                yield "\n".join(result1), "\n".join(result2)
+
+
+            result1[-1] = result1[-1].replace("\n", "")
+            p_n_content.append(result1[-1])
+
+            result1.append("*"*30)
+            yield "\n".join(result1), "\n".join(result2)
+
+        prompt_report = f"你是一个大学教授，你需要根据相关内容，来撰写一段内容，生成的结果必须严格来自相关内容，语言必须严谨、符合事实，不能使用第一人称，相关内容如下：\n```\n{''.join(p_n_content)}\n```\n生成的结果为："
+
+        result1.append("第一段报告内容:\n")
+        result2.append("\t\t\t")
+        yield "\n".join(result1), "\n".join(result2)
+
+        response = get_ans(prompt_report)
+
+        for trunk in response:
+            result1[-1] += trunk.choices[0].delta.content
+            result2[-1] += trunk.choices[0].delta.content
+
+            result1[-1] = result1[-1].replace("\n", "")
+            result2[-1] = result2[-1].replace("\n", "")
+            yield "\n".join(result1), "\n".join(result2)
+
+
+        all_report += result2[-1]
+        all_report += "\n"
+
+        result1.append("*"*30)
+        yield "\n".join(result1), "\n".join(result2)
+
+        # print(report)
+        # print("*" * 30)
+
+def function2(input1):
+    return input1
+
+
+class MyDataBase:
+    def __init__(self,path):
+        if os.path.exists(os.path.join(path,"txt")) == False:
+            print("对应的知识库txt文件夹不存在")
+            exit(-999)
+        if os.path.exists(os.path.join(path,"prompt.xlsx")) == False:
+            print("prompt模板不存在")
+            exit(-998)
+        if os.path.exists(".cache") == False:
+            os.mkdir(".cache")
+
+        self.prompt_data = pd.read_excel(os.path.join(path,"prompt.xlsx"))
+        self.document = MyDocument(os.path.join(path,"txt"),path)
+        self.emb_database = MyEmbDatabase(".\\moka-ai_m3e-base", self.document.contents,path)
+
+    def search(self,text,topn=3):
+        return self.emb_database.search(text,topn)
+
+
+def database_change(input1):
+    global database,database1,database2
+    if "知识库1" in input1:
+        database = database1
+    elif "知识库2" in input1:
+        database = database2
+    else:
+        database = database1
+
+    return database.prompt_data
+
+if __name__ == "__main__":
+    # ----------------------------- 功能定义 -----------------------------
+    database1 = MyDataBase("database1")
+    database2 = MyDataBase("database2")
+
+    database = database1
+
+
+
+
+    # ----------------------------- 界面控件 -----------------------------
+    input1 = gr.Radio(choices=["知识库1-大模型","知识库2-小米汽车","上传知识库"],label="选择知识库",value="知识库1-大模型")
+    input2 = gr.DataFrame(database.prompt_data,height=400)
+
+    output1 = gr.Textbox(label="报告生成过程",lines=11,max_lines=14)
+    output2 = gr.Textbox(label="报告生成内容",lines=11,max_lines=14)
+
+
+    # ----------------------------- 界面启动 -----------------------------
+
+    interface1 = gr.Interface(function1,[input1,input2],[output1,output2],submit_btn="点击生成报告",clear_btn=gr.Button("clear"),visible=False)
+    interface2 = gr.Interface(function2,"text","text")
+
+    tab_interface = gr.TabbedInterface([interface1,interface2],["报告生成","知识库问答"],title="RAG报告生成和问答")
+
+    with tab_interface as tab_interface:
+        input1.change(database_change,input1,input2)
+        tab_interface.launch(server_name="0.0.0.0",server_port=9999,show_api=False, auth=("username", "password"))
+
+
+

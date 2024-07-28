@@ -1,0 +1,13 @@
+
+# foders
+res
+output
+result
+
+
+# files
+*.pt
+*.pkl
+*.pdf
+*.o
+*.bin
