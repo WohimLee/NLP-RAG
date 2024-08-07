@@ -3,11 +3,11 @@
 res
 output
 result
-
+txt
 
 # files
 *.pt
 *.pkl
-*.pdf
 *.o
 *.bin
+*.txt
