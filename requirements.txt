@@ -7,5 +7,6 @@ gradio
 jieba
 pymilvus
 pypinyin
+pymupdf
 
 pandas
