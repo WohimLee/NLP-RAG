@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 
 codes = ['2-', '4-', '5-', '6-']
+filters = ["成为", "是啥", "是什么"]
 
 def get_answer(prompt):
     client = ZhipuAI(api_key="0f56bcd3ce36d22b5b6564de4faeebfe.nvc4AlZb8rw1WhFG") # 请填写您自己的APIKey
@@ -24,7 +25,17 @@ def get_answer(prompt):
         result += chunk.choices[0].delta.content
     return result
     
-    
+def post_process(json_file):
+    res = []
+    with open(json_file, "r", encoding='utf-8') as f:
+        jobs = json.load(f)
+        for job in tqdm(jobs, desc="Processing json"):
+            if any(f in job["instruction"] or f in job["output"] for f in filters):
+                continue
+            res.append(job)
+    with open("jobs_qa-res.json", "w") as f:
+        json.dump(res, f, indent=2, ensure_ascii=False)
+        
 if __name__ == "__main__":
     # file_path = "all_jobs-test.json"
     # file_path = "data/all_jobs-4th.json"
@@ -58,8 +69,12 @@ A的要求：结合所给文本内容，给用户推荐相关的职业，不是�
                     all_qa.append(data)    
             except:
                 pass
-             
+            n = len(all_qa)
+            if n !=0 and n % 5 == 0:
+                with open("jobs_qa.json", "w", encoding="utf-8") as file:
+                    json.dump(all_qa, file, indent=2, ensure_ascii=False)
+                    print(f"[INFO]: Save {n} QAs to jobs_qa.json")
 
-    with open("jobs_qa.json", "w", encoding="utf-8") as file:
-        json.dump(all_qa, file, indent=2, ensure_ascii=False)
-        pass
+
+    json_file = 'jobs_qa.json'
+    post_process(json_file)
